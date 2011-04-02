@@ -39,3 +39,21 @@ the js file to enable the extension.
     ext.useString(s1, program);
     // draw geometry
     ...
+
+For optimal performance batch all operations by type and by map/string:
+    // First do all character map updates
+    ext.characterMapAppendCharacters(map0, ...);
+    ext.characterMapAppendCharacters(map0, ...);
+    ext.characterMapAppendCharacters(map1, ...);
+    ext.characterMapAppendCharacters(map1, ...);
+    // Next do all string creates/updates
+    ext.stringData(string0, map0, ...);
+    ext.stringData(string1, map0, ...);
+    ext.stringData(string2, map1, ...);
+    ext.stringData(string3, map1, ...);
+    // Finally do all draws sorted by map/string
+    ext.drawString(string0, ...); // from map0
+    ext.drawString(string1, ...); // from map0
+    ext.drawString(string2, ...); // from map1
+    ext.drawString(string3, ...); // from map1
+    

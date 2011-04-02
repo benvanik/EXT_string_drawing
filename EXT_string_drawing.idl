@@ -21,6 +21,7 @@ interface EXT_string_drawing {
     // Create a character map with the given font description
     ExtCharacterMap createCharacterMap(ExtFontAttributes font);
     void deleteCharacterMap(ExtCharacterMap map);
+    GLboolean isCharacterMap(ExtCharacterMap map);
     const GLenum CHARACTER_MAP_FONT_ATTRIBUTES;
     any getCharacterMapParameter(ExtCharacterMap map, GLenum pname); // CHARACTER_MAP_FONT_ATTRIBUTES, DELETE_STATUS
     // Ahead-of-time append a set of characters to the map (do at load time, if possible)
@@ -35,6 +36,7 @@ interface EXT_string_drawing {
     const GLenum DRAWN_STRING;
     ExtString createString(GLenum type); // PAINTED_STRING | DRAWN_STRING
     void deleteString(ExtString str);
+    GLboolean isString(ExtString str);
     // Set the string to the given characters from the given map
     void stringData(ExtString str, ExtCharacterMap map, DOMString chars, GLenum usage); // STATIC/STREAM/DYNAMIC_DRAW
     // Tint the string
