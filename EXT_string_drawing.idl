@@ -18,6 +18,11 @@ interface EXT_string_drawing {
     // Returns full fragment shader for PAINTED mode
     WebGLShader getStringFragmentShader();
 
+    const GLenum MAX_STRING_LENGTH;
+    const GLenum MAX_STRING_OUTLINE_WIDTH;
+    const GLenum MAX_STRING_GLOW_WIDTH;
+    const GLenum MAX_STRING_SHADOW_OFFSET;
+
     // Create a character map with the given font description
     ExtCharacterMap createCharacterMap(ExtFontAttributes font);
     void deleteCharacterMap(ExtCharacterMap map);
@@ -48,6 +53,8 @@ interface EXT_string_drawing {
     // Set the string shadow (offsetx = 0.0 && offsety = 0.0 to disable)
     void stringShadow(ExtString str, float offsetx, float offsety, GLclampf red, GLclampf green, GLclampf blue);
     const GLenum STRING_TYPE;
+    const GLenum STRING_USAGE;
+    const GLenum STRING_VALUE;
     const GLenum STRING_WIDTH;
     const GLenum STRING_HEIGHT;
     const GLenum STRING_COLOR;
