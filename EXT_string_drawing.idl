@@ -1,0 +1,66 @@
+interface ExtFontAttributes {
+    attribute DOMString fontFamily;
+    attribute DOMString fontStyle;
+    attribute DOMString fontSize;
+    attribute DOMString fontWeight;
+    attribute DOMString fontVariant;
+};
+
+interface ExtCharacterMap {
+};
+
+interface ExtString {
+};
+
+interface EXT_string_drawing {
+    // Returns source to mix in for PAINTED mode with a method EXT_string_sample(uv) -> alpha value
+    DOMString getStringFragmentSource();
+    // Returns full fragment shader for PAINTED mode
+    WebGLShader getStringFragmentShader();
+
+    // Create a character map with the given font description
+    ExtCharacterMap createCharacterMap(ExtFontAttributes font);
+    void deleteCharacterMap(ExtCharacterMap map);
+    const GLenum CHARACTER_MAP_FONT_ATTRIBUTES;
+    any getCharacterMapParameter(ExtCharacterMap map, GLenum pname); // CHARACTER_MAP_FONT_ATTRIBUTES, DELETE_STATUS
+    // Ahead-of-time append a set of characters to the map (do at load time, if possible)
+    void characterMapAppendCharacters(ExtCharacterMap map, DOMString chars);
+    const GLenum CHARACTER_SET_ASCII;
+    void characterMapAppendSet(ExtCharacterMap map, GLenum set);
+    // Return width/height of a string in device-independent pixels
+    float[] measureString(ExtCharacterMap map, DOMString chars);
+
+    // Create a string of the given type
+    const GLenum PAINTED_STRING;
+    const GLenum DRAWN_STRING;
+    ExtString createString(GLenum type); // PAINTED_STRING | DRAWN_STRING
+    void deleteString(ExtString str);
+    // Set the string to the given characters from the given map
+    void stringData(ExtString str, ExtCharacterMap map, DOMString chars, GLenum usage); // STATIC/STREAM/DYNAMIC_DRAW
+    // Tint the string
+    void stringColor(ExtString str, GLclampf red, GLclampf green, GLclampf blue, GLclampf alpha);
+    // Set the string outline (width = 0.0 to disable)
+    void stringOutline(ExtString str, float width);
+    // Set the string glow (width = 0.0 to disable)
+    void stringGlow(ExtString str, float width, GLclampf red, GLclampf green, GLclampf blue);
+    // Set the string shadow (offsetx = 0.0 && offsety = 0.0 to disable)
+    void stringShadow(ExtString str, float offsetx, float offsety, GLclampf red, GLclampf green, GLclampf blue);
+    const GLenum STRING_TYPE;
+    const GLenum STRING_WIDTH;
+    const GLenum STRING_HEIGHT;
+    const GLenum STRING_COLOR;
+    const GLenum STRING_OUTLINE_WIDTH;
+    const GLenum STRING_GLOW_WIDTH;
+    const GLenum STRING_GLOW_COLOR;
+    const GLenum STRING_SHADOW_OFFSET;
+    const GLenum STRING_SHADOW_COLOR;
+    any getStringParameter(ExtString str, GLenum pname); // STRING_* + DELETE_STATUS
+
+    // Draw a string of type DRAWN_STRING with the given transformation/projection matrix
+    void drawString(ExtString str, Float32Array matrix, float z); // 4x4 world->ndc
+    void drawString(ExtString str, float x, float y);
+
+    // Setup a string of type PAINTED_STRING for painting
+    // Will useProgram and set a bunch of uniforms - follow with desired vs/fs uniforms and draw calls
+    void useString(ExtString str, WebGLProgram program);
+};
