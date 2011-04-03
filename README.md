@@ -22,7 +22,7 @@ the js file to enable the extension.
     // Draw the string in the scene
     ...
     ext.drawString(s0, 100.0, 10.0); // x,y on the screen
-    ext.drawString(s0, matrix, 0.0); // matrix and depth to write (if depth writing enabled)
+    ext.drawString(s0, matrix); // matrix
     ...
 
 

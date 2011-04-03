@@ -1,5 +1,82 @@
 (function () {
 
+    var StringBuffer = function StringBuffer(gl, charCapacity) {
+        this.gl = gl;
+
+        this.arrayBuffer_ = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.arrayBuffer_);
+        gl.bufferData(gl.ARRAY_BUFFER, charCapacity * 4 * 4 * 4, gl.DYNAMIC_DRAW);
+
+        // TODO: a real bitmap tracking usage/etc
+        this.nextOffset_ = 0;
+    };
+    StringBuffer.prototype.dispose = function dispose() {
+        var gl = this.gl;
+        gl.deleteBuffer(this.arrayBuffer_);
+        this.buffer_ = null;
+    };
+    StringBuffer.prototype.allocate = function allocate(str) {
+        var gl = this.gl;
+        var map = str.map_;
+        var chars = str.characters_;
+
+        var scratch = new Float32Array(chars.length * 4 * 4);
+
+        var x = 0;
+        var y = 0;
+        var h = map.charHeight_;
+
+        for (var n = 0, v = 0; n < chars.length; n++) {
+            var c = chars[n];
+            var char = map.chars_[c];
+            var w = char.width;
+
+            var slot = char.slot;
+            var sx = slot % map.slotsPerSide_;
+            var sy = Math.floor(slot / map.slotsPerSide_);
+            var sw = map.slotSize_;
+            var s = sx * sw;
+            var t = sy * sw;
+
+            // 0---1
+            // | / |
+            // 2---3
+
+            // 0 (TL)
+            scratch[v++] = x;
+            scratch[v++] = y;
+            scratch[v++] = s;
+            scratch[v++] = t;
+
+            // 1 (TR)
+            scratch[v++] = x + w;
+            scratch[v++] = y;
+            scratch[v++] = s + sw;
+            scratch[v++] = t;
+
+            // 2 (BL)
+            scratch[v++] = x;
+            scratch[v++] = y + h;
+            scratch[v++] = s;
+            scratch[v++] = t + sw;
+
+            // 3 (BR)
+            scratch[v++] = x + w;
+            scratch[v++] = y + h;
+            scratch[v++] = s + sw;
+            scratch[v++] = t + sw;
+
+            x += w;
+            // TODO: spacing
+        }
+
+        var offset = str.bufferOffset_ = this.nextOffset_;
+        this.nextOffset_ += scratch.byteLength;
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.arrayBuffer_);
+        gl.bufferSubData(gl.ARRAY_BUFFER, offset, scratch);
+    };
+
     // TODO: optimize
     var DistanceFieldGenerator = function DistanceFieldGenerator(font) {
         var canvas = this.canvas = document.createElement("canvas");
@@ -23,6 +100,7 @@
         // Resize to what we think will be enough
         this.spread = 15; // TODO: tweak
         canvas.width = canvas.height = this.ascent + this.spread * 2;
+        this.size = canvas.width;
 
         this.grid1 = new Int32Array(canvas.width * canvas.height * 2);
         this.grid2 = new Int32Array(canvas.width * canvas.height * 2);
@@ -31,7 +109,7 @@
         var ctx = this.ctx;
 
         // Measure
-        var width = ctx.measureText(c).width;
+        var width = ctx.measureText(char.value).width;
         char.width = width;
 
         // Draw the character in the canvas
@@ -55,7 +133,7 @@
         var pd = px * px + py * py;
         if (pd < td) {
             t.x = px;
-            t.y = ty;
+            t.y = py;
         }
     };
     DistanceFieldGenerator.prototype.generateSlowGrid_ = function generateSlowGrid_(w, h, grid) {
@@ -170,7 +248,7 @@
         this.data = null;
     };
 
-    var ExtCharacterMap = function ExtCharacterMap(font) {
+    var ExtCharacterMap = function ExtCharacterMap(gl, font) {
         this.font_ = {
             fontFamily: font.fontFamily || "san-serif",
             fontStyle: font.fontStyle || "normal",
@@ -180,8 +258,9 @@
         };
         // TODO: clamp/massage values/convert to standards
 
-        this.generator_ = new DistanceFieldGenerator(this.font);
+        this.generator_ = new DistanceFieldGenerator(this.font_);
         this.charHeight_ = this.generator_.ascent;
+        this.slotSize_ = this.generator_.size;
 
         this.deleted_ = false;
         this.refCount_ = 1; // self
@@ -189,9 +268,16 @@
         this.charsDirty_ = false;
         this.pendingChars_ = [];
 
-        this.freeSlots_ = 0;
+        // At most take 1024
+        var maxSize = Math.min(1024, gl.getParameter(gl.MAX_TEXTURE_SIZE));
+
+        this.maxSize_ = maxSize;
+        this.slotsPerSide_ = (maxSize / this.slotSize_);
+        this.freeSlots_ = this.slotsPerSide_ * this.slotsPerSide_;
         this.nextSlot_ = 0;
         this.chars_ = {};
+
+        this.texture = null
     };
 
     var ExtString = function ExtString(type) {
@@ -216,16 +302,20 @@
 
         this.outlineWidth_ = 0.0;
 
-        this.glowWidth_ = 0.0;
-        this.glowRed_ = 0.0;
-        this.glowGreen_ = 0.0;
-        this.glowBlue_ = 0.0;
-
+        this.shadowWidth_ = 0.0;
         this.shadowOffsetX_ = 0.0;
         this.shadowOffsetY_ = 0.0;
         this.shadowRed_ = 0.0;
         this.shadowGreen_ = 0.0;
         this.shadowBlue_ = 0.0;
+
+        this.attribData_ = new Float32Array(16);
+
+        // Used if drawn:
+        this.buffer_ = null; // StringBuffer
+        this.bufferOffset_ = 0; // vertex offset
+
+        // Used if painted:
     };
 
     var EXT_string_drawing = function EXT_string_drawing(gl) {
@@ -242,16 +332,18 @@
         this.caps = {
             stringLength: 128,
             outlineWidth: 10.0,
-            glowWidth: 10.0,
+            shadowWidth: 10.0,
             shadowOffset: 10.0
         };
 
-        this.setupResources_();
+        if (!this.setupResources_()) {
+            throw "Failed to setup extension resources - broken!";
+        }
     };
 
     EXT_string_drawing.prototype.MAX_STRING_LENGTH = 0x119950;
     EXT_string_drawing.prototype.MAX_STRING_OUTLINE_WIDTH = 0x119951;
-    EXT_string_drawing.prototype.MAX_STRING_GLOW_WIDTH = 0x119952;
+    EXT_string_drawing.prototype.MAX_STRING_SHADOW_WIDTH = 0x119952;
     EXT_string_drawing.prototype.MAX_STRING_SHADOW_OFFSET = 0x119953;
 
     EXT_string_drawing.prototype.CHARACTER_MAP_FONT_ATTRIBUTES = 0x119900;
@@ -268,18 +360,112 @@
     EXT_string_drawing.prototype.STRING_HEIGHT = 0x119933;
     EXT_string_drawing.prototype.STRING_COLOR = 0x119934;
     EXT_string_drawing.prototype.STRING_OUTLINE_WIDTH = 0x119935;
-    EXT_string_drawing.prototype.STRING_GLOW_WIDTH = 0x119936;
-    EXT_string_drawing.prototype.STRING_GLOW_COLOR = 0x119937;
-    EXT_string_drawing.prototype.STRING_SHADOW_OFFSET = 0x119938;
-    EXT_string_drawing.prototype.STRING_SHADOW_COLOR = 0x119939;
+    EXT_string_drawing.prototype.STRING_SHADOW_WIDTH = 0x119936;
+    EXT_string_drawing.prototype.STRING_SHADOW_OFFSET = 0x119937;
+    EXT_string_drawing.prototype.STRING_SHADOW_COLOR = 0x119938;
 
 
 
     EXT_string_drawing.prototype.setupResources_ = function setupResources_() {
-        // TODO: initialize shaders/programs/etc
-        this.fragmentSource_ = "";
-        this.fragmentShader_ = null;
-        throw "Not Implemented";
+        var gl = this.gl;
+
+        var oldElementArrayBuffer = gl.getParameter(gl.ELEMENT_ARRAY_BUFFER_BINDING);
+        var oldArrayBuffer = gl.getParameter(gl.ARRAY_BUFFER_BINDING);
+
+        // Shared fragment source (for linking in user programs)
+        this.fragmentSource_ = "" +
+            "vec4 sampleChar(sampler2D charMap, const vec2 uv, const mat4 data) {\n" +
+            "    float distance = texture2D(charMap, uv).a;\n" +
+            "    float alpha = smoothstep(0.5 - 0.04, 0.5 + 0.04, distance);\n" +
+            "    return vec4(1.0, 0.0, 0.0, alpha);\n" +
+            "}\n";
+
+        var vertexSource = "" +
+            "uniform mat4 u_transform;\n" +
+            "attribute vec4 a_coords;   // [x, y, s, t]\n" +
+            "varying vec2 v_coords;     // [s, t]\n" +
+            "void main() {\n" +
+            "    vec2 pos = a_coords.xy;\n" +
+            "    gl_Position = vec4(pos.x, pos.y, 0.0, 1.0);\n" +
+            "    v_coords.st = a_coords.zw;\n" +
+            "}\n";
+
+        var fragmentSource = "" +
+            "precision highp float;\n" +
+            "uniform sampler2D u_charMap;\n" +
+            "uniform mat4 u_stringData; // [COLOR_R,       COLOR_G,       COLOR_B,       COLOR_A,      \n" +
+            "                           //  OUTLINE_R,     OUTLINE_G,     OUTLINE_B,     OUTLINE_WIDTH,\n" +
+            "                           //  SHADOW_R,      SHADOW_G,      SHADOW_B,      SHADOW_WIDTH, \n" +
+            "                           //  SHADOW_X,      SHADOW_Y,      x,             x            ]\n" +
+            "varying vec2 v_coords;\n" +
+            this.fragmentSource_ +
+            "void main() {\n" +
+            "    gl_FragColor = vec4(v_coords.s, v_coords.t, 0.0, 1.0);\n" +
+            "    //gl_FragColor = sampleChar(u_charMap, v_coords, u_stringData);\n" +
+            "}\n";
+
+        // Drawing vertex shader
+        var vs = gl.createShader(gl.VERTEX_SHADER);
+        gl.shaderSource(vs, vertexSource);
+        gl.compileShader(vs);
+        if (!gl.getShaderParameter(vs, gl.COMPILE_STATUS)) {
+            var log = gl.getShaderInfoLog(vs);
+            console.log("failed to compile vertex shader:");
+            console.log(log);
+            return false;
+        }
+
+        // Drawing fragment shader
+        var fs = this.fragmentShader_ = gl.createShader(gl.FRAGMENT_SHADER);
+        gl.shaderSource(fs, fragmentSource);
+        gl.compileShader(fs);
+        if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) {
+            var log = gl.getShaderInfoLog(fs);
+            console.log("failed to compile fragment shader:");
+            console.log(log);
+            return false;
+        }
+
+        // Drawing program
+        var program = this.drawProgram_ = gl.createProgram();
+        gl.attachShader(program, vs);
+        gl.attachShader(program, fs);
+        gl.bindAttribLocation(program, 0, "a_coords");
+        gl.bindAttribLocation(program, 0, "");
+        gl.bindAttribLocation(program, 0, "");
+        gl.linkProgram(program);
+        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+            var log = gl.getProgramInfoLog(program);
+            console.log("failed to link program:");
+            console.log(log);
+            return false;
+        }
+        program.u_transform = gl.getUniformLocation(program, "u_transform");
+        program.u_charMap = gl.getUniformLocation(program, "u_charMap");
+        program.u_stringData = gl.getUniformLocation(program, "u_stringData");
+
+        // Setup shared index buffer
+        var indexBuffer = this.elementArrayBuffer_ = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+        var quadCount = 8192;
+        var indices = new Uint16Array(quadCount * 3 * 2);
+        for (var n = 0, i = 0, v = 0; n < quadCount; n++, i += 6, v += 4) {
+            indices[i + 0] = v + 0;
+            indices[i + 1] = v + 1;
+            indices[i + 2] = v + 2;
+            indices[i + 3] = v + 2;
+            indices[i + 4] = v + 1;
+            indices[i + 5] = v + 3;
+        }
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+
+        // TODO: don't do this
+        this.DUMMYBUFFER = new StringBuffer(gl, 8192);
+
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, oldElementArrayBuffer);
+        gl.bindBuffer(gl.ARRAY_BUFFER, oldArrayBuffer);
+
+        return true;
     };
 
     EXT_string_drawing.prototype.setError_ = function setError_(error) {
@@ -320,16 +506,20 @@
         map.refCount_++;
     };
     EXT_string_drawing.prototype.derefCharacterMap_ = function derefCharacterMap_(map) {
+        var gl = this.gl;
         map.refCount_--;
         if (map.deleted_ && !map.refCount_) {
             // Map can really be deleted
-            // TODO: delete map for real
+            if (map.texture) {
+                gl.deleteTexture(map.texture);
+                map.texture = null;
+            }
         }
     };
 
     EXT_string_drawing.prototype.createCharacterMap = function createCharacterMap(font) {
         var gl = this.gl;
-        var map = new ExtCharacterMap(font);
+        var map = new ExtCharacterMap(gl, font);
         // ?
         return map;
     };
@@ -550,46 +740,29 @@
             this.dirtyStringAttribs_(str);
         }
     };
-    EXT_string_drawing.prototype.stringGlow = function stringGlow(str, width, red, green, blue) {
+    EXT_string_drawing.prototype.stringShadow = function stringShadow(str, width, offsetx, offsety, red, green, blue) {
         var gl = this.gl;
         if (!this.validateString_(str)) {
             return;
         }
-        var w = Math.min(Math.max(width, 0.0), this.caps.glowWidth);
-        var r = Math.min(Math.max(red, 0.0), 1.0);
-        var g = Math.min(Math.max(green, 0.0), 1.0);
-        var b = Math.min(Math.max(blue, 0.0), 1.0);
-        if (str.attribsDirty_ ||
-            (str.glowWidth_ !== w) ||
-            (str.glowRed_ !== r) ||
-            (str.glowGreen_ !== r) ||
-            (str.glowBlue_ !== r)) {
-            str.glowWidth_ = w;
-            str.glowRed_ = r;
-            str.glowGreen_ = g;
-            str.glowBlue_ = b;
-            this.dirtyStringAttribs_(str);
-        }
-    };
-    EXT_string_drawing.prototype.stringShadow = function stringShadow(str, offsetx, offsety, red, green, blue) {
-        var gl = this.gl;
-        if (!this.validateString_(str)) {
-            return;
-        }
+        var maxWidth = this.caps.shadowWidth;
         var maxOffset = this.caps.shadowOffset;
+        var w = Math.min(Math.max(width, 0.0), maxWidth);
         var x = Math.min(Math.max(offsetx, -maxOffset), maxOffset);
         var y = Math.min(Math.max(offsety, -maxOffset), maxOffset);
         var r = Math.min(Math.max(red, 0.0), 1.0);
         var g = Math.min(Math.max(green, 0.0), 1.0);
         var b = Math.min(Math.max(blue, 0.0), 1.0);
         if (str.attribsDirty_ ||
+            (str.shadowWidth_ !== w) ||
             (str.shadowOffsetX_ !== x) ||
             (str.shadowOffsetY_ !== y) ||
             (str.shadowRed_ !== r) ||
             (str.shadowGreen_ !== g) ||
             (str.shadowBlue_ !== b)) {
-            str.shadowOffsetX = x;
-            str.shadowOffsetY = y;
+            str.shadowWidth_ = w;
+            str.shadowOffsetX_ = x;
+            str.shadowOffsetY_ = y;
             str.shadowRed_ = r;
             str.shadowGreen_ = g;
             str.shadowBlue_ = b;
@@ -618,10 +791,8 @@
                 return [str.colorRed_, str.colorGreen_, str.colorBlue_, str.colorAlpha_];
             case this.STRING_OUTLINE_WIDTH:
                 return str.outlineWidth_;
-            case this.STRING_GLOW_WIDTH:
-                return str.glowWidth_;
-            case this.STRING_GLOW_COLOR:
-                return [str.glowRed_, str.glowGreen_, str.glowBlue_];
+            case this.STRING_SHADOW_WIDTH:
+                return str.shadowWidth_;
             case this.STRING_SHADOW_OFFSET:
                 return [str.shadowOffsetX_, str.shadowOffsetY_];
             case this.STRING_SHADOW_COLOR:
@@ -634,20 +805,99 @@
 
 
 
-    EXT_string_drawing.prototype.prepareCharacterMap_ = function prepareCharacterMap_(map) {
-        //
+    EXT_string_drawing.prototype.prepareCharacterMap_ = function prepareCharacterMap_(map, safe) {
+        var gl = this.gl;
+        var oldTexture;
+        if (safe) {
+            oldTexture = gl.getParameter(gl.TEXTURE_BINDING_2D);
+        }
+
+        if (!map.texture) {
+            // No texture - create new
+            map.texture_ = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, map.texture_);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.ALPHA, map.maxSize_, map.maxSize_, 0, gl.ALPHA, gl.UNSIGNED_BYTE, null);
+        } else {
+            gl.bindTexture(gl.TEXTURE_2D, map.texture_);
+        }
+
+        if (map.charsDirty_) {
+            var pendingChars = map.pendingChars_;
+            for (var n = 0; n < pendingChars.length; n++) {
+                var char = pendingChars[n];
+
+                var slot = char.slot;
+                var sx = slot % map.slotsPerSide_;
+                var sy = Math.floor(slot / map.slotsPerSide_);
+                var x = sx * map.slotSize_;
+                var y = sy * map.slotSize_;
+                var w = map.slotSize_;
+                var h = map.slotSize_;
+                gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, w, h, gl.ALPHA, gl.UNSIGNED_BYTE, char.data);
+            }
+            pendingChars.length = 0;
+
+            map.charsDirty_ = false;
+        }
+
+        if (safe) {
+            gl.bindTexture(gl.TEXTURE_2D, oldTexture);
+        }
+
+        return true;
     };
-    EXT_string_drawing.prototype.prepareString_ = function prepareString_(str) {
-        //
+    EXT_string_drawing.prototype.prepareString_ = function prepareString_(str, safe) {
+        var gl = this.gl;
+
+        if (str.dataDirty_) {
+            if (!str.buffer_) {
+                // Not yet allocated
+                str.buffer_ = this.DUMMYBUFFER;
+                this.DUMMYBUFFER.allocate(str);
+            } else {
+                // TODO: reallocate
+                throw "String modification not yet implemented";
+            }
+
+            str.dataDirty_ = false;
+        }
+
+        if (str.attribsDirty_) {
+            var attribData = str.attribData_;
+
+            attribData[0] = str.colorRed_;
+            attribData[1] = str.colorGreen_;
+            attribData[2] = str.colorBlue_;
+            attribData[3] = str.colorAlpha_;
+
+            attribData[4] = str.outlineRed_;
+            attribData[5] = str.outlineGreen_;
+            attribData[6] = str.outlineBlue_;
+            attribData[7] = str.outlineWidth_;
+
+            attribData[8] = str.shadowRed_;
+            attribData[9] = str.shadowGreen_;
+            attribData[10] = str.shadowBlue_;
+            attribData[11] = str.shadowWidth_;
+
+            attribData[12] = str.shadowOffsetX_;
+            attribData[13] = str.shadowOffsetY_;
+            attribData[14] = 0;
+            attribData[15] = 0;
+
+            str.attribsDirty_ = false;
+        }
+
+        return true;
     };
-    EXT_string_drawing.prototype.prepareExecution_ = function prepareExecution_() {
+    EXT_string_drawing.prototype.prepareExecution_ = function prepareExecution_(safe) {
         var gl = this.gl;
         var anyFailed = false;
 
         var dirtyCharacterMaps = this.dirtyCharacterMaps_;
         for (var n = 0; n < dirtyCharacterMaps.length; n++) {
             var map = dirtyCharacterMaps[n];
-            if (!this.prepareCharacterMap_(map)) {
+            if (!this.prepareCharacterMap_(map, safe)) {
                 anyFailed = true;
                 break;
             }
@@ -663,8 +913,8 @@
 
         var dirtyStrings = this.dirtyStrings_;
         for (var n = 0; n < dirtyStrings.length; n++) {
-            var str = dirtystrings[n];
-            if (!this.prepareString_(str)) {
+            var str = dirtyStrings[n];
+            if (!this.prepareString_(str, safe)) {
                 anyFailed = true;
                 break;
             }
@@ -681,7 +931,7 @@
         return true;
     };
     EXT_string_drawing.prototype.flushStrings = function flushStrings() {
-        this.prepareExecution_();
+        this.prepareExecution_(true);
     };
 
 
@@ -712,23 +962,74 @@
 
 
     EXT_string_drawing.prototype.drawString = function drawString(str) {
-        //(ExtString str, Float32Array matrix, float z); // 4x4 world->ndc
-        //(ExtString str, float x, float y);
+        //(ExtString str, Float32Array matrix); // 4x4 world->ndc
+        //(ExtString str, float x, float y, float z);
         var gl = this.gl;
         if (!this.validateString_(str)) {
             return;
         }
-        if (str.deleted_) {
+        if (str.deleted_ || !str.map_) {
             this.setError_(gl.INVALID_OPERATION);
             return;
         }
 
-        if (!this.prepareExecution_()) {
+        if (!this.prepareExecution_(false)) {
             return;
         }
 
+        var map = str.map_;
+        gl.bindTexture(gl.TEXTURE_2D, map.texture_);
+
+        var program = this.drawProgram_;
+        gl.useProgram(program);
+        gl.uniform1i(program.u_charMap, 0);
+        gl.uniformMatrix4fv(program.u_stringData, false, str.attribData_);
+
+        // Transform - either pass through directly or 
+        var transform;
+        if (arguments.length == 2) {
+            // Matrix - pass directly through
+            transform = arguments[1];
+        } else {
+            // x, y in window coordinates
+            transform = new Float32Array(16);
+
+            transform[0] = 1;
+            transform[1] = 0;
+            transform[2] = 0;
+            transform[3] = 0;
+
+            transform[4] = 0;
+            transform[5] = 1;
+            transform[6] = 0;
+            transform[7] = 0;
+
+            transform[8] = 0;
+            transform[9] = 0;
+            transform[10] = 1;
+            transform[11] = 0;
+
+            transform[12] = 0;
+            transform[13] = 0;
+            transform[14] = 0;
+            transform[15] = 1;
+
+            // TODO: scale, translate, etc
+        }
+        gl.uniformMatrix4fv(program.u_transform, false, transform);
+
+        // TODO: set attributes
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.elementArrayBuffer_);
+        gl.bindBuffer(gl.ARRAY_BUFFER, str.buffer_.arrayBuffer_);
+        gl.enableVertexAttribArray(0);
+        gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 0, 0);
+
+        var charCount = str.characters_.length;
+        var offset = str.bufferOffset_ / (4 * 4);
+        gl.drawElements(gl.TRIANGLES, 2 * 3 * charCount, gl.UNSIGNED_SHORT, offset);
+
         // TODO: draw
-        throw "Not Implemented";
+        //throw "Not Implemented";
     };
 
     EXT_string_drawing.prototype.useString = function useString(str, program) {
@@ -759,7 +1060,7 @@
         }
         gl.useProgram(program);
 
-        if (!this.prepareExecution_()) {
+        if (!this.prepareExecution_(false)) {
             return;
         }
 
@@ -818,13 +1119,13 @@
             var ext = this.EXT_string_drawing_;
             if (ext) {
                 switch (pname) {
-                    case MAX_STRING_LENGTH:
+                    case ext.MAX_STRING_LENGTH:
                         return ext.caps.stringLength;
-                    case MAX_STRING_OUTLINE_WIDTH:
+                    case ext.MAX_STRING_OUTLINE_WIDTH:
                         return ext.caps.outlineWidth;
-                    case MAX_STRING_GLOW_WIDTH:
-                        return ext.caps.glowWidth;
-                    case MAX_STRING_SHADOW_OFFSET:
+                    case ext.MAX_STRING_SHADOW_WIDTH:
+                        return ext.caps.shadowWidth;
+                    case ext.MAX_STRING_SHADOW_OFFSET:
                         return ext.caps.shadowOffset;
                     case ext.CURRENT_STRING:
                         return ext.currentString_;

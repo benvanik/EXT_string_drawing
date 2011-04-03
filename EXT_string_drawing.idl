@@ -20,7 +20,7 @@ interface EXT_string_drawing {
 
     const GLenum MAX_STRING_LENGTH;
     const GLenum MAX_STRING_OUTLINE_WIDTH;
-    const GLenum MAX_STRING_GLOW_WIDTH;
+    const GLenum MAX_STRING_SHADOW_WIDTH;
     const GLenum MAX_STRING_SHADOW_OFFSET;
 
     // Create a character map with the given font description
@@ -46,10 +46,8 @@ interface EXT_string_drawing {
     void stringColor(ExtString str, GLclampf red, GLclampf green, GLclampf blue, GLclampf alpha);
     // Set the string outline (width = 0.0 to disable)
     void stringOutline(ExtString str, float width);
-    // Set the string glow (width = 0.0 to disable)
-    void stringGlow(ExtString str, float width, GLclampf red, GLclampf green, GLclampf blue);
-    // Set the string shadow (offsetx = 0.0 && offsety = 0.0 to disable)
-    void stringShadow(ExtString str, float offsetx, float offsety, GLclampf red, GLclampf green, GLclampf blue);
+    // Set the string shadow/glow (width = 0.0 to disable, offsetx = 0.0 && offsety = 0.0 for glow)
+    void stringShadow(ExtString str, float width, float offsetx, float offsety, GLclampf red, GLclampf green, GLclampf blue);
     const GLenum STRING_TYPE;
     const GLenum STRING_USAGE;
     const GLenum STRING_VALUE;
@@ -57,8 +55,7 @@ interface EXT_string_drawing {
     const GLenum STRING_HEIGHT;
     const GLenum STRING_COLOR;
     const GLenum STRING_OUTLINE_WIDTH;
-    const GLenum STRING_GLOW_WIDTH;
-    const GLenum STRING_GLOW_COLOR;
+    const GLenum STRING_SHADOW_WIDTH;
     const GLenum STRING_SHADOW_OFFSET;
     const GLenum STRING_SHADOW_COLOR;
     any getStringParameter(ExtString str, GLenum pname); // STRING_* + DELETE_STATUS
@@ -70,8 +67,8 @@ interface EXT_string_drawing {
     float[] measureString(ExtCharacterMap map, DOMString chars);
 
     // Draw a string of type DRAWN_STRING with the given transformation/projection matrix
-    void drawString(ExtString str, Float32Array matrix, float z); // 4x4 world->ndc
-    void drawString(ExtString str, float x, float y);
+    void drawString(ExtString str, Float32Array matrix); // 4x4 world->ndc
+    void drawString(ExtString str, float x, float y, float z);
 
     // Setup a string of type PAINTED_STRING for painting
     // Will useProgram and set a bunch of uniforms - follow with desired vs/fs uniforms and draw calls

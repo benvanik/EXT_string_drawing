@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>EXT_string_drawing sample 1</title>
+<script type="text/javascript" src="../src/EXT_string_drawing.js"></script>
+<script type="text/javascript">
+
+    var app = {
+        canvas: null,
+        gl: null,
+        ext: null,
+
+        map: null,
+        s0: null
+    };
+
+    function DocumentLoaded() {
+        app.canvas = document.getElementById("canvas");
+        var gl = app.gl = app.canvas.getContext("experimental-webgl");
+        var ext = app.ext = app.gl.getExtension("EXT_string_drawing");
+
+        var map = app.map = ext.createCharacterMap({
+            fontFamily: "Tahoma",
+            fontSize: "10px"
+        });
+        ext.characterMapAppendSet(map, ext.CHARACTER_SET_ASCII);
+
+        // Create a string object and set some properties on it
+        var s0 = app.s0 = ext.createString(ext.DRAWN_STRING);
+        ext.stringData(s0, map, "hello world!", gl.STATIC_DRAW);
+        ext.stringColor(s0, 1.0, 0.0, 0.0, 1.0);
+        ext.stringShadow(s0, 3.0, 3.0, 0.0, 0.0, 0.0);
+
+        render();
+    };
+
+    function render() {
+        var gl = app.gl;
+        var ext = app.ext;
+        window.webkitRequestAnimationFrame(render, app.canvas);
+
+        gl.viewport(0, 0, app.canvas.width, app.canvas.height);
+        gl.clearColor(0.0, 0.0, 1.0, 1.0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+
+        gl.enable(gl.CULL_FACE);
+        gl.disable(gl.DEPTH_TEST);
+        gl.enable(gl.BLEND);
+
+        ext.drawString(app.s0, 100.0, 10.0);
+    };
+
+</script>
+</head>
+<body onload="DocumentLoaded();">
+<canvas id="canvas" width="500" height="500"></canvas>
+</body>
+</html>
