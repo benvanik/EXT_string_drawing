@@ -40,18 +40,21 @@ the js file to enable the extension.
     // draw geometry
     ...
 
-For optimal performance batch all operations by type and by map/string:
-    // First do all character map updates
+For optimal performance batch map/string updates separately from draws. No real work
+is performed until a draw/use. If you want to force the work to happen at a specific
+time (ideally as early in the frame as possible after all modifications have been done)
+call flushStrings().
+When drawing strings try to batch based on map/string - this will reduce state thrashing.
+    // Start of frame:
     ext.characterMapAppendCharacters(map0, ...);
-    ext.characterMapAppendCharacters(map0, ...);
-    ext.characterMapAppendCharacters(map1, ...);
-    ext.characterMapAppendCharacters(map1, ...);
-    // Next do all string creates/updates
     ext.stringData(string0, map0, ...);
     ext.stringData(string1, map0, ...);
+    ext.characterMapAppendCharacters(map1, ...);
     ext.stringData(string2, map1, ...);
     ext.stringData(string3, map1, ...);
-    // Finally do all draws sorted by map/string
+    ext.flushStrings(); // optional, but recommended
+    ...
+    // Do all draws sorted by map/string
     ext.drawString(string0, ...); // from map0
     ext.drawString(string1, ...); // from map0
     ext.drawString(string2, ...); // from map1

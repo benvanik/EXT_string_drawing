@@ -33,9 +33,7 @@ interface EXT_string_drawing {
     void characterMapAppendCharacters(ExtCharacterMap map, DOMString chars);
     const GLenum CHARACTER_SET_ASCII;
     void characterMapAppendSet(ExtCharacterMap map, GLenum set);
-    // Return width/height of a string in device-independent pixels
-    float[] measureString(ExtCharacterMap map, DOMString chars);
-
+    
     // Create a string of the given type
     const GLenum PAINTED_STRING;
     const GLenum DRAWN_STRING;
@@ -64,6 +62,12 @@ interface EXT_string_drawing {
     const GLenum STRING_SHADOW_OFFSET;
     const GLenum STRING_SHADOW_COLOR;
     any getStringParameter(ExtString str, GLenum pname); // STRING_* + DELETE_STATUS
+
+    // Optional call to immediately process pending work
+    void flushStrings();
+
+    // Return width/height of a string in device-independent pixels
+    float[] measureString(ExtCharacterMap map, DOMString chars);
 
     // Draw a string of type DRAWN_STRING with the given transformation/projection matrix
     void drawString(ExtString str, Float32Array matrix, float z); // 4x4 world->ndc
