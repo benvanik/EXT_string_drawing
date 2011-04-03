@@ -206,7 +206,7 @@
         for (var y = 0; y < h; y++) {
             for (var x = 0; x < w; x++, si += 4, di += 2) {
                 var a = data[si + 3];
-                if (a >= 128) {
+                if (a >= 1) {
                     // inside
                     grid1[di] = 0;
                     grid1[di + 1] = 0;
@@ -1047,7 +1047,7 @@
         gl.vertexAttribPointer(0, 4, gl.SHORT, false, 0, 0);
 
         var charCount = str.characters_.length;
-        var offset = str.bufferOffset_ / (4 * 4);
+        var offset = (str.bufferOffset_ / (4 * 4 * 2)) * (6 * 2);
         gl.drawElements(gl.TRIANGLES, 2 * 3 * charCount, gl.UNSIGNED_SHORT, offset);
     };
 
