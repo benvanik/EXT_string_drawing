@@ -11,7 +11,8 @@
         ext: null,
 
         map: null,
-        s0: null
+        s0: null,
+        s1: null
     };
 
     function DocumentLoaded() {
@@ -29,10 +30,15 @@
         var s0 = app.s0 = ext.createString(ext.DRAWN_STRING);
         ext.stringData(s0, map, "hello world!", gl.STATIC_DRAW);
         ext.stringColor(s0, 1.0, 0.0, 0.0, 1.0);
-        ext.stringShadow(s0, 3.0, 3.0, 0.0, 0.0, 0.0);
+        //ext.stringShadow(s0, 1.0, 3.0, 3.0, 0.0, 0.0, 0.0);
+        var s1 = app.s1 = ext.createString(ext.DRAWN_STRING);
+        ext.stringData(s1, map, "BOOOOOOOOOOOO!!!~~~~", gl.STATIC_DRAW);
+        ext.stringColor(s1, 0.0, 1.0, 1.0, 1.0);
 
         render();
     };
+
+    var yy = 0;
 
     function render() {
         var gl = app.gl;
@@ -47,7 +53,23 @@
         gl.disable(gl.DEPTH_TEST);
         gl.enable(gl.BLEND);
 
-        ext.drawString(app.s0, 100.0, 10.0);
+        yy += 3;
+        if (yy > app.canvas.height) {
+            yy = 0;
+        }
+
+        var w = ext.getStringParameter(app.s0, ext.STRING_WIDTH);
+        var h = ext.getStringParameter(app.s0, ext.STRING_HEIGHT);
+        ext.stringColor(app.s0, 1.0, 0.0, 0.0, 1.0);
+        ext.drawString(app.s0, 0, 0, 0.0);
+        ext.stringColor(app.s0, 0.0, 1.0, 0.0, 1.0);
+        ext.drawString(app.s0, 0, app.canvas.height - h, 0.0);
+        ext.stringColor(app.s0, 1.0, 1.0, 0.0, 1.0);
+        ext.drawString(app.s0, app.canvas.width - w, 0, 0.0);
+        ext.stringColor(app.s0, 1.0, 1.0, 1.0, 1.0);
+        ext.drawString(app.s0, app.canvas.width - w, app.canvas.height - h, 0.0);
+
+        ext.drawString(app.s1, yy, yy, 0.0);
     };
 
 </script>

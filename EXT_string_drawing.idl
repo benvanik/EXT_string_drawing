@@ -45,7 +45,7 @@ interface EXT_string_drawing {
     // Tint the string
     void stringColor(ExtString str, GLclampf red, GLclampf green, GLclampf blue, GLclampf alpha);
     // Set the string outline (width = 0.0 to disable)
-    void stringOutline(ExtString str, float width);
+    void stringOutline(ExtString str, float width, GLclampf red, GLclampf green, GLclampf blue);
     // Set the string shadow/glow (width = 0.0 to disable, offsetx = 0.0 && offsety = 0.0 for glow)
     void stringShadow(ExtString str, float width, float offsetx, float offsety, GLclampf red, GLclampf green, GLclampf blue);
     const GLenum STRING_TYPE;
@@ -55,6 +55,7 @@ interface EXT_string_drawing {
     const GLenum STRING_HEIGHT;
     const GLenum STRING_COLOR;
     const GLenum STRING_OUTLINE_WIDTH;
+    const GLenum STRING_OUTLINE_COLOR;
     const GLenum STRING_SHADOW_WIDTH;
     const GLenum STRING_SHADOW_OFFSET;
     const GLenum STRING_SHADOW_COLOR;

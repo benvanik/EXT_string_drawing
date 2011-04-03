@@ -5,7 +5,7 @@
 
         this.arrayBuffer_ = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, this.arrayBuffer_);
-        gl.bufferData(gl.ARRAY_BUFFER, charCapacity * 4 * 4 * 4, gl.DYNAMIC_DRAW);
+        gl.bufferData(gl.ARRAY_BUFFER, charCapacity * 4 * 4 * 2, gl.DYNAMIC_DRAW);
 
         // TODO: a real bitmap tracking usage/etc
         this.nextOffset_ = 0;
@@ -20,7 +20,7 @@
         var map = str.map_;
         var chars = str.characters_;
 
-        var scratch = new Float32Array(chars.length * 4 * 4);
+        var scratch = new Int16Array(chars.length * 4 * 4);
 
         var x = 0;
         var y = 0;
@@ -56,18 +56,19 @@
 
             // 2 (BL)
             scratch[v++] = x;
-            scratch[v++] = y + h;
+            scratch[v++] = y - h;
             scratch[v++] = s;
             scratch[v++] = t + sw;
 
             // 3 (BR)
             scratch[v++] = x + w;
-            scratch[v++] = y + h;
+            scratch[v++] = y - h;
             scratch[v++] = s + sw;
             scratch[v++] = t + sw;
 
             x += w;
             // TODO: spacing
+            x += 1;
         }
 
         var offset = str.bufferOffset_ = this.nextOffset_;
@@ -281,13 +282,13 @@
     };
 
     var ExtString = function ExtString(type) {
-        this.type = type;
+        this.type_ = type;
 
         this.deleted_ = false;
         this.refCount_ = 1; // self
 
         this.dataDirty_ = false;
-        this.attribsDirty_ = false;
+        this.attribsDirty_ = false; // only gets set for PAINTED_STRING
 
         this.map_ = null;
         this.usage_ = 0;
@@ -295,20 +296,10 @@
         this.width_ = 0.0;
         this.height_ = 0.0;
 
-        this.colorRed_ = 1.0;
-        this.colorGreen_ = 1.0;
-        this.colorBlue_ = 1.0;
-        this.colorAlpha_ = 1.0;
-
-        this.outlineWidth_ = 0.0;
-
-        this.shadowWidth_ = 0.0;
-        this.shadowOffsetX_ = 0.0;
-        this.shadowOffsetY_ = 0.0;
-        this.shadowRed_ = 0.0;
-        this.shadowGreen_ = 0.0;
-        this.shadowBlue_ = 0.0;
-
+        // [COLOR_R,       COLOR_G,       COLOR_B,       COLOR_A,      
+        //  OUTLINE_R,     OUTLINE_G,     OUTLINE_B,     OUTLINE_WIDTH,
+        //  SHADOW_R,      SHADOW_G,      SHADOW_B,      SHADOW_WIDTH, 
+        //  SHADOW_X,      SHADOW_Y,      x,             x            ]
         this.attribData_ = new Float32Array(16);
 
         // Used if drawn:
@@ -360,9 +351,10 @@
     EXT_string_drawing.prototype.STRING_HEIGHT = 0x119933;
     EXT_string_drawing.prototype.STRING_COLOR = 0x119934;
     EXT_string_drawing.prototype.STRING_OUTLINE_WIDTH = 0x119935;
-    EXT_string_drawing.prototype.STRING_SHADOW_WIDTH = 0x119936;
-    EXT_string_drawing.prototype.STRING_SHADOW_OFFSET = 0x119937;
-    EXT_string_drawing.prototype.STRING_SHADOW_COLOR = 0x119938;
+    EXT_string_drawing.prototype.STRING_OUTLINE_COLOR = 0x119936;
+    EXT_string_drawing.prototype.STRING_SHADOW_WIDTH = 0x119937;
+    EXT_string_drawing.prototype.STRING_SHADOW_OFFSET = 0x119938;
+    EXT_string_drawing.prototype.STRING_SHADOW_COLOR = 0x119939;
 
 
 
@@ -385,8 +377,9 @@
             "attribute vec4 a_coords;   // [x, y, s, t]\n" +
             "varying vec2 v_coords;     // [s, t]\n" +
             "void main() {\n" +
-            "    vec2 pos = a_coords.xy;\n" +
-            "    gl_Position = vec4(pos.x, pos.y, 0.0, 1.0);\n" +
+            "    vec4 pos = vec4(a_coords.x, a_coords.y, 0.0, 1.0);\n" +
+            "    gl_Position = u_transform * pos;\n" +
+        //"    gl_Position = vec4(pos.x / 500.0, pos.y / 500.0, 0.0, 1.0);\n" +
             "    v_coords.st = a_coords.zw;\n" +
             "}\n";
 
@@ -400,7 +393,8 @@
             "varying vec2 v_coords;\n" +
             this.fragmentSource_ +
             "void main() {\n" +
-            "    gl_FragColor = vec4(v_coords.s, v_coords.t, 0.0, 1.0);\n" +
+            "    gl_FragColor = u_stringData[0].rgba;\n" +
+            "    //gl_FragColor = vec4(v_coords.s, v_coords.t, 0.0, 1.0);\n" +
             "    //gl_FragColor = sampleChar(u_charMap, v_coords, u_stringData);\n" +
             "}\n";
 
@@ -450,12 +444,12 @@
         var quadCount = 8192;
         var indices = new Uint16Array(quadCount * 3 * 2);
         for (var n = 0, i = 0, v = 0; n < quadCount; n++, i += 6, v += 4) {
-            indices[i + 0] = v + 0;
+            indices[i + 0] = v + 3;
             indices[i + 1] = v + 1;
             indices[i + 2] = v + 2;
             indices[i + 3] = v + 2;
             indices[i + 4] = v + 1;
-            indices[i + 5] = v + 3;
+            indices[i + 5] = v + 0;
         }
         gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
 
@@ -632,6 +626,10 @@
         str.dataDirty_ = true;
     };
     EXT_string_drawing.prototype.dirtyStringAttribs_ = function dirtyStringAttribs_(str) {
+        if (str.type_ !== this.PAINTED_STRING) {
+            // No attrib dirtying for DRAWN_STRING
+            return;
+        }
         if (!str.dataDirty_ && !str.attribsDirty_) {
             this.dirtyStrings_.push(str);
         }
@@ -705,6 +703,9 @@
         }
         str.usage_ = usage;
         str.characters_ = chars ? String(chars) : "";
+        var dims = this.measureString(map, str.characters_);
+        str.width_ = dims[0];
+        str.height_ = dims[1];
         this.dirtyStringData_(str);
     };
     EXT_string_drawing.prototype.stringColor = function stringColor(str, red, green, blue, alpha) {
@@ -716,29 +717,28 @@
         var g = Math.min(Math.max(green, 0.0), 1.0);
         var b = Math.min(Math.max(blue, 0.0), 1.0);
         var a = Math.min(Math.max(alpha, 0.0), 1.0);
-        if (str.attribsDirty_ ||
-            (str.colorRed_ !== r) ||
-            (str.colorGreen_ !== g) ||
-            (str.colorBlue_ !== b) ||
-            (str.colorAlpha_ !== a)) {
-            str.colorRed_ = r;
-            str.colorGreen_ = g;
-            str.colorBlue_ = b;
-            str.colorAlpha_ = a;
-            this.dirtyStringAttribs_(str);
-        }
+        var attribData = str.attribData_;
+        attribData[0] = r;
+        attribData[1] = g;
+        attribData[2] = b;
+        attribData[3] = a;
+        this.dirtyStringAttribs_(str);
     };
-    EXT_string_drawing.prototype.stringOutline = function stringOutline(str, width) {
+    EXT_string_drawing.prototype.stringOutline = function stringOutline(str, width, red, green, blue) {
         var gl = this.gl;
         if (!this.validateString_(str)) {
             return;
         }
         var w = Math.min(Math.max(width, 0.0), this.caps.outlineWidth);
-        if (str.attribsDirty_ ||
-            (str.outlineWidth_ !== w)) {
-            str.outlineWidth_ = w;
-            this.dirtyStringAttribs_(str);
-        }
+        var r = Math.min(Math.max(red, 0.0), 1.0);
+        var g = Math.min(Math.max(green, 0.0), 1.0);
+        var b = Math.min(Math.max(blue, 0.0), 1.0);
+        var attribData = str.attribData_;
+        attribData[4] = r;
+        attribData[5] = g;
+        attribData[6] = b;
+        attribData[7] = w;
+        this.dirtyStringAttribs_(str);
     };
     EXT_string_drawing.prototype.stringShadow = function stringShadow(str, width, offsetx, offsety, red, green, blue) {
         var gl = this.gl;
@@ -753,27 +753,21 @@
         var r = Math.min(Math.max(red, 0.0), 1.0);
         var g = Math.min(Math.max(green, 0.0), 1.0);
         var b = Math.min(Math.max(blue, 0.0), 1.0);
-        if (str.attribsDirty_ ||
-            (str.shadowWidth_ !== w) ||
-            (str.shadowOffsetX_ !== x) ||
-            (str.shadowOffsetY_ !== y) ||
-            (str.shadowRed_ !== r) ||
-            (str.shadowGreen_ !== g) ||
-            (str.shadowBlue_ !== b)) {
-            str.shadowWidth_ = w;
-            str.shadowOffsetX_ = x;
-            str.shadowOffsetY_ = y;
-            str.shadowRed_ = r;
-            str.shadowGreen_ = g;
-            str.shadowBlue_ = b;
-            this.dirtyStringAttribs_(str);
-        }
+        var attribData = str.attribData_;
+        attribData[8] = r;
+        attribData[9] = g;
+        attribData[10] = b;
+        attribData[11] = w;
+        attribData[12] = x;
+        attribData[13] = y;
+        this.dirtyStringAttribs_(str);
     };
     EXT_string_drawing.prototype.getStringParameter = function getStringParameter(str, pname) {
         var gl = this.gl;
         if (!this.validateString_(str)) {
             return 0;
         }
+        var attribData = str.attribData_;
         switch (pname) {
             case gl.DELETE_STATUS:
                 return str.deleted_;
@@ -788,15 +782,17 @@
             case this.STRING_HEIGHT:
                 return str.height_;
             case this.STRING_COLOR:
-                return [str.colorRed_, str.colorGreen_, str.colorBlue_, str.colorAlpha_];
+                return [attribData[0], attribData[1], attribData[2], attribData[3]];
             case this.STRING_OUTLINE_WIDTH:
-                return str.outlineWidth_;
+                return attribData[7];
+            case this.STRING_OUTLINE_COLOR:
+                return [attribData[4], attribData[5], attribData[6]];
             case this.STRING_SHADOW_WIDTH:
-                return str.shadowWidth_;
+                return attribData[11];
             case this.STRING_SHADOW_OFFSET:
-                return [str.shadowOffsetX_, str.shadowOffsetY_];
+                return [attribData[12], attribData[13]];
             case this.STRING_SHADOW_COLOR:
-                return [str.shadowRed_, str.shadowGreen_, str.shadowBlue_];
+                return [attribData[8], attribData[9], attribData[10]];
             default:
                 this.setError_(gl.INVALID_ENUM);
                 return 0;
@@ -849,43 +845,36 @@
     EXT_string_drawing.prototype.prepareString_ = function prepareString_(str, safe) {
         var gl = this.gl;
 
-        if (str.dataDirty_) {
-            if (!str.buffer_) {
-                // Not yet allocated
-                str.buffer_ = this.DUMMYBUFFER;
-                this.DUMMYBUFFER.allocate(str);
-            } else {
-                // TODO: reallocate
-                throw "String modification not yet implemented";
+        if (str.type_ === this.DRAWN_STRING) {
+
+            if (str.dataDirty_) {
+                if (!str.buffer_) {
+                    // Not yet allocated
+                    str.buffer_ = this.DUMMYBUFFER;
+                    this.DUMMYBUFFER.allocate(str);
+                } else {
+                    // TODO: reallocate
+                    throw "String modification not yet implemented";
+                }
+
+                str.dataDirty_ = false;
             }
 
-            str.dataDirty_ = false;
-        }
+        } else if (str.type_ === this.PAINTED_STRING) {
 
-        if (str.attribsDirty_) {
-            var attribData = str.attribData_;
+            if (str.dataDirty_) {
+                // TODO: something
 
-            attribData[0] = str.colorRed_;
-            attribData[1] = str.colorGreen_;
-            attribData[2] = str.colorBlue_;
-            attribData[3] = str.colorAlpha_;
+                str.dataDirty_ = false;
+            }
 
-            attribData[4] = str.outlineRed_;
-            attribData[5] = str.outlineGreen_;
-            attribData[6] = str.outlineBlue_;
-            attribData[7] = str.outlineWidth_;
+            if (str.attribsDirty_) {
+                var attribData = str.attribData_;
 
-            attribData[8] = str.shadowRed_;
-            attribData[9] = str.shadowGreen_;
-            attribData[10] = str.shadowBlue_;
-            attribData[11] = str.shadowWidth_;
+                // TODO: something
 
-            attribData[12] = str.shadowOffsetX_;
-            attribData[13] = str.shadowOffsetY_;
-            attribData[14] = 0;
-            attribData[15] = 0;
-
-            str.attribsDirty_ = false;
+                str.attribsDirty_ = false;
+            }
         }
 
         return true;
@@ -954,6 +943,7 @@
             }
             w += char.width;
             // TODO: spacing
+            w += 1;
         }
 
         return [w, h];
@@ -994,13 +984,22 @@
             // x, y in window coordinates
             transform = new Float32Array(16);
 
-            transform[0] = 1;
+            var vw = 500.0;
+            var vh = 500.0;
+
+            var sx = 1 / vw * 2;
+            var sy = 1 / vh * 2;
+            var tx = (Number(arguments[1]) / vw - 0.5) * 2;
+            var ty = (Number(arguments[2]) / vh - 0.5) * 2;
+            var tz = Number(arguments[3]);
+
+            transform[0] = sx;
             transform[1] = 0;
             transform[2] = 0;
             transform[3] = 0;
 
             transform[4] = 0;
-            transform[5] = 1;
+            transform[5] = sy;
             transform[6] = 0;
             transform[7] = 0;
 
@@ -1009,9 +1008,9 @@
             transform[10] = 1;
             transform[11] = 0;
 
-            transform[12] = 0;
-            transform[13] = 0;
-            transform[14] = 0;
+            transform[12] = tx;
+            transform[13] = -ty;
+            transform[14] = tz;
             transform[15] = 1;
 
             // TODO: scale, translate, etc
@@ -1022,14 +1021,11 @@
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.elementArrayBuffer_);
         gl.bindBuffer(gl.ARRAY_BUFFER, str.buffer_.arrayBuffer_);
         gl.enableVertexAttribArray(0);
-        gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 0, 0);
+        gl.vertexAttribPointer(0, 4, gl.SHORT, false, 0, 0);
 
         var charCount = str.characters_.length;
         var offset = str.bufferOffset_ / (4 * 4);
         gl.drawElements(gl.TRIANGLES, 2 * 3 * charCount, gl.UNSIGNED_SHORT, offset);
-
-        // TODO: draw
-        //throw "Not Implemented";
     };
 
     EXT_string_drawing.prototype.useString = function useString(str, program) {
