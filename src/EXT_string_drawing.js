@@ -26,17 +26,21 @@
         var y = 0;
         var h = map.charHeight_;
 
+        var sw = map.slotSize_ / map.maxSize_ * 32767;
+
         for (var n = 0, v = 0; n < chars.length; n++) {
             var c = chars[n];
             var char = map.chars_[c];
             var w = char.width;
 
+            // TODO: cache on char
             var slot = char.slot;
             var sx = slot % map.slotsPerSide_;
             var sy = Math.floor(slot / map.slotsPerSide_);
-            var sw = map.slotSize_;
             var s = sx * sw;
             var t = sy * sw;
+
+            // TODO: grow pos by spread
 
             // 0---1
             // | / |
@@ -80,18 +84,20 @@
 
     // TODO: optimize
     var DistanceFieldGenerator = function DistanceFieldGenerator(font) {
-        var canvas = this.canvas = document.createElement("canvas");
-        var frag = document.createDocumentFragment();
-        frag.appendChild(canvas);
-
-        var ctx = this.ctx = canvas.getContext("2d");
         var fontString = "";
         fontString += font.fontStyle + " ";
         fontString += font.fontVariant + " ";
         fontString += font.fontWeight + " ";
         fontString += font.fontSize + " ";
         fontString += font.fontFamily + " ";
-        ctx.font = fontString;
+        this.fontString_ = fontString;
+        
+        var canvas = this.canvas = document.createElement("canvas");
+        var frag = document.createDocumentFragment();
+        frag.appendChild(canvas);
+
+        var ctx = this.ctx = canvas.getContext("2d");
+        ctx.font = this.fontString_;
         ctx.textBaseline = "top";
         ctx.fillStyle = "rgb(0, 0, 0)";
 
@@ -108,6 +114,10 @@
     };
     DistanceFieldGenerator.prototype.generate = function generate(char) {
         var ctx = this.ctx;
+
+        ctx.font = this.fontString_;
+        ctx.textBaseline = "top";
+        ctx.fillStyle = "rgb(0, 0, 0)";
 
         // Measure
         var width = ctx.measureText(char.value).width;
@@ -269,11 +279,11 @@
         this.charsDirty_ = false;
         this.pendingChars_ = [];
 
-        // At most take 1024
+        // TODO: pick a better size based on font size/etc
         var maxSize = Math.min(1024, gl.getParameter(gl.MAX_TEXTURE_SIZE));
 
         this.maxSize_ = maxSize;
-        this.slotsPerSide_ = (maxSize / this.slotSize_);
+        this.slotsPerSide_ = Math.floor((maxSize / this.slotSize_));
         this.freeSlots_ = this.slotsPerSide_ * this.slotsPerSide_;
         this.nextSlot_ = 0;
         this.chars_ = {};
@@ -361,15 +371,22 @@
     EXT_string_drawing.prototype.setupResources_ = function setupResources_() {
         var gl = this.gl;
 
+        // Enable standard derivatives
+        if (!gl.getExtension("OES_standard_derivatives")) {
+            console.log("require OES_standard_derivatives");
+            return false;
+        }
+
         var oldElementArrayBuffer = gl.getParameter(gl.ELEMENT_ARRAY_BUFFER_BINDING);
         var oldArrayBuffer = gl.getParameter(gl.ARRAY_BUFFER_BINDING);
 
         // Shared fragment source (for linking in user programs)
         this.fragmentSource_ = "" +
             "vec4 sampleChar(sampler2D charMap, const vec2 uv, const mat4 data) {\n" +
-            "    float distance = texture2D(charMap, uv).a;\n" +
-            "    float alpha = smoothstep(0.5 - 0.04, 0.5 + 0.04, distance);\n" +
-            "    return vec4(1.0, 0.0, 0.0, alpha);\n" +
+            "    float distance = 1.0 - texture2D(charMap, uv).a;\n" +
+            "    float smoothWidth = fwidth(distance);\n" +
+            "    float alpha = smoothstep(0.5 - smoothWidth, 0.5 + smoothWidth, distance);\n" +
+            "    return data[0].rgba * alpha;\n" +
             "}\n";
 
         var vertexSource = "" +
@@ -379,11 +396,11 @@
             "void main() {\n" +
             "    vec4 pos = vec4(a_coords.x, a_coords.y, 0.0, 1.0);\n" +
             "    gl_Position = u_transform * pos;\n" +
-        //"    gl_Position = vec4(pos.x / 500.0, pos.y / 500.0, 0.0, 1.0);\n" +
-            "    v_coords.st = a_coords.zw;\n" +
+            "    v_coords.st = a_coords.zw / vec2(32767.0, 32767.0);\n" +
             "}\n";
 
         var fragmentSource = "" +
+            "#extension GL_OES_standard_derivatives : enable\n" +
             "precision highp float;\n" +
             "uniform sampler2D u_charMap;\n" +
             "uniform mat4 u_stringData; // [COLOR_R,       COLOR_G,       COLOR_B,       COLOR_A,      \n" +
@@ -393,8 +410,9 @@
             "varying vec2 v_coords;\n" +
             this.fragmentSource_ +
             "void main() {\n" +
-            "    gl_FragColor = u_stringData[0].rgba;\n" +
+            "    //gl_FragColor = u_stringData[0].rgba;\n" +
             "    //gl_FragColor = vec4(v_coords.s, v_coords.t, 0.0, 1.0);\n" +
+            "    float c = texture2D(u_charMap, v_coords).a; gl_FragColor = vec4(c, c, c, 1.0);\n" +
             "    //gl_FragColor = sampleChar(u_charMap, v_coords, u_stringData);\n" +
             "}\n";
 
@@ -808,10 +826,13 @@
             oldTexture = gl.getParameter(gl.TEXTURE_BINDING_2D);
         }
 
+        gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
         if (!map.texture) {
             // No texture - create new
             map.texture_ = gl.createTexture();
             gl.bindTexture(gl.TEXTURE_2D, map.texture_);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
             gl.texImage2D(gl.TEXTURE_2D, 0, gl.ALPHA, map.maxSize_, map.maxSize_, 0, gl.ALPHA, gl.UNSIGNED_BYTE, null);
         } else {
             gl.bindTexture(gl.TEXTURE_2D, map.texture_);
@@ -953,7 +974,7 @@
 
     EXT_string_drawing.prototype.drawString = function drawString(str) {
         //(ExtString str, Float32Array matrix); // 4x4 world->ndc
-        //(ExtString str, float x, float y, float z);
+        //(ExtString str, float x, float y, float z, float scale);
         var gl = this.gl;
         if (!this.validateString_(str)) {
             return;
@@ -968,6 +989,7 @@
         }
 
         var map = str.map_;
+        gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, map.texture_);
 
         var program = this.drawProgram_;
@@ -987,8 +1009,9 @@
             var vw = 500.0;
             var vh = 500.0;
 
-            var sx = 1 / vw * 2;
-            var sy = 1 / vh * 2;
+            var s = Number(arguments[4]);
+            var sx = s / vw * 2;
+            var sy = s / vh * 2;
             var tx = (Number(arguments[1]) / vw - 0.5) * 2;
             var ty = (Number(arguments[2]) / vh - 0.5) * 2;
             var tz = Number(arguments[3]);

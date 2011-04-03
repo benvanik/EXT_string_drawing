@@ -22,7 +22,7 @@
 
         var map = app.map = ext.createCharacterMap({
             fontFamily: "Tahoma",
-            fontSize: "10px"
+            fontSize: "16px"
         });
         ext.characterMapAppendSet(map, ext.CHARACTER_SET_ASCII);
 
@@ -39,6 +39,7 @@
     };
 
     var yy = 0;
+    var dy = 3;
 
     function render() {
         var gl = app.gl;
@@ -52,24 +53,25 @@
         gl.enable(gl.CULL_FACE);
         gl.disable(gl.DEPTH_TEST);
         gl.enable(gl.BLEND);
-
-        yy += 3;
-        if (yy > app.canvas.height) {
-            yy = 0;
-        }
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
         var w = ext.getStringParameter(app.s0, ext.STRING_WIDTH);
         var h = ext.getStringParameter(app.s0, ext.STRING_HEIGHT);
         ext.stringColor(app.s0, 1.0, 0.0, 0.0, 1.0);
-        ext.drawString(app.s0, 0, 0, 0.0);
+        ext.drawString(app.s0, 0, 0, 0.0, 1.0);
         ext.stringColor(app.s0, 0.0, 1.0, 0.0, 1.0);
-        ext.drawString(app.s0, 0, app.canvas.height - h, 0.0);
+        ext.drawString(app.s0, 0, app.canvas.height - h, 0.0, 1.0);
         ext.stringColor(app.s0, 1.0, 1.0, 0.0, 1.0);
-        ext.drawString(app.s0, app.canvas.width - w, 0, 0.0);
+        ext.drawString(app.s0, app.canvas.width - w, 0, 0.0, 1.0);
         ext.stringColor(app.s0, 1.0, 1.0, 1.0, 1.0);
-        ext.drawString(app.s0, app.canvas.width - w, app.canvas.height - h, 0.0);
+        ext.drawString(app.s0, app.canvas.width - w, app.canvas.height - h, 0.0, 1.0);
 
-        ext.drawString(app.s1, yy, yy, 0.0);
+        var h0 = ext.getStringParameter(app.s1, ext.STRING_HEIGHT);
+        yy += dy;
+        if (yy < 0 || yy + h0 * 10.0 > app.canvas.height) {
+            dy = -dy;
+        }
+        ext.drawString(app.s1, 0.0, yy, 0.0, 10.0);
     };
 
 </script>

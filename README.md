@@ -21,7 +21,7 @@ the js file to enable the extension.
 
     // Draw the string in the scene
     ...
-    ext.drawString(s0, 100.0, 10.0); // x,y on the screen
+    ext.drawString(s0, 100.0, 10.0, 1.0); // x,y,z,scale on the screen
     ext.drawString(s0, matrix); // matrix
     ...
 

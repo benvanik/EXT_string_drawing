@@ -69,7 +69,7 @@ interface EXT_string_drawing {
 
     // Draw a string of type DRAWN_STRING with the given transformation/projection matrix
     void drawString(ExtString str, Float32Array matrix); // 4x4 world->ndc
-    void drawString(ExtString str, float x, float y, float z);
+    void drawString(ExtString str, float x, float y, float z, float scale);
 
     // Setup a string of type PAINTED_STRING for painting
     // Will useProgram and set a bunch of uniforms - follow with desired vs/fs uniforms and draw calls
