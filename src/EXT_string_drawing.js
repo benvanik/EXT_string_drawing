@@ -384,9 +384,18 @@
         this.fragmentSource_ = "" +
             "vec4 sampleChar(sampler2D charMap, const vec2 uv, const mat4 data) {\n" +
             "    float distance = 1.0 - texture2D(charMap, uv).a;\n" +
-            "    float smoothWidth = fwidth(distance);\n" +
-            "    float alpha = smoothstep(0.5 - smoothWidth, 0.5 + smoothWidth, distance);\n" +
-            "    return data[0].rgba * alpha;\n" +
+            "    vec3 rgb = vec3(distance, distance, distance) + data[0].rgb;\n" +
+            "    const float smoothCenter = 0.5;\n" +
+            "    float width = fwidth(distance);\n" +
+            "    float alpha = smoothstep(smoothCenter - width, smoothCenter + width, distance);\n" +
+            //"    vec4 baseColor = data[0].rgba * alpha;\n" +
+            //"    float shadowDistance = texture2D(charMap, uv + data[3].xy).a;\n" +
+            //"    vec4 shadowColor = vec4(data[2].rgb * smoothstep(smoothCenter + smoothWidth, smoothCenter + data[2].a, shadowAlpha), alpha);\n" +
+            //"    vec4 color = mix(shadowColor, baseColor, 0.0);\n" +
+            //"    return color;\n" +
+            "    alpha *= data[0].a;\n" +
+            "    return vec4(rgb * alpha, alpha);\n" +
+            //"    return data[0].rgba * alpha;\n" +
             "}\n";
 
         var vertexSource = "" +
@@ -412,8 +421,8 @@
             "void main() {\n" +
             "    //gl_FragColor = u_stringData[0].rgba;\n" +
             "    //gl_FragColor = vec4(v_coords.s, v_coords.t, 0.0, 1.0);\n" +
-            "    float c = texture2D(u_charMap, v_coords).a; gl_FragColor = vec4(c, c, c, 1.0);\n" +
-            "    //gl_FragColor = sampleChar(u_charMap, v_coords, u_stringData);\n" +
+            "    //float c = texture2D(u_charMap, v_coords).a; gl_FragColor = vec4(c, c, c, 1.0);\n" +
+            "    gl_FragColor = sampleChar(u_charMap, v_coords, u_stringData);\n" +
             "}\n";
 
         // Drawing vertex shader

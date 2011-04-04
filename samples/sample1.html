@@ -21,8 +21,9 @@
         var ext = app.ext = app.gl.getExtension("EXT_string_drawing");
 
         var map = app.map = ext.createCharacterMap({
-            fontFamily: "Tahoma",
-            fontSize: "16px"
+            fontFamily: "Arial",
+            fontSize: "32px",
+            fontWeight: "normal"
         });
         ext.characterMapAppendSet(map, ext.CHARACTER_SET_ASCII);
 
@@ -34,6 +35,7 @@
         var s1 = app.s1 = ext.createString(ext.DRAWN_STRING);
         ext.stringData(s1, map, "BOOOOOOOOOOOO!!!~~~~", gl.STATIC_DRAW);
         ext.stringColor(s1, 0.0, 1.0, 1.0, 1.0);
+        ext.stringShadow(s1, 1.0, 0.0, 0.01, 0.0, 1.0, 0.0);
 
         render();
     };
@@ -68,10 +70,10 @@
 
         var h0 = ext.getStringParameter(app.s1, ext.STRING_HEIGHT);
         yy += dy;
-        if (yy < 0 || yy + h0 * 10.0 > app.canvas.height) {
+        if (yy < 0 || yy + h0 * 5.0 > app.canvas.height) {
             dy = -dy;
         }
-        ext.drawString(app.s1, 0.0, yy, 0.0, 10.0);
+        ext.drawString(app.s1, 0.0, yy, 0.0, 5.0);
     };
 
 </script>
