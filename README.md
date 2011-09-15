@@ -45,6 +45,7 @@ is performed until a draw/use. If you want to force the work to happen at a spec
 time (ideally as early in the frame as possible after all modifications have been done)
 call flushStrings().
 When drawing strings try to batch based on map/string - this will reduce state thrashing.
+
     // Start of frame:
     ext.characterMapAppendCharacters(map0, ...);
     ext.stringData(string0, map0, ...);
